@@ -1,66 +1,67 @@
-# WEEK 13: CONSTRUCTING & RUNNING A BASIC RAG CHAIN
-# Install:
-# pip install langchain langchain-community langchain-openai faiss-cpu
- 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+# 1. Install dependencies
+!pip install -q langchain langchain-community langchain-huggingface transformers sentence-transformers faiss-cpu accelerate
+
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain_community.vectorstores import FAISS
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
- 
+from transformers import pipeline
+
 print("===== WEEK 13: BASIC RAG CHAIN =====")
- 
-embeddings = OpenAIEmbeddings(
-    api_key="YOUR_OPENAI_API_KEY"
-)
- 
+
+# 2. Use the same embedding model used to create the index in Week 12
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+# 3. Load the local FAISS index
 vector_store = FAISS.load_local(
     "faiss_index",
     embeddings,
     allow_dangerous_deserialization=True
 )
- 
-retriever = vector_store.as_retriever(
-    search_kwargs={"k": 3}
+
+retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+
+# 4. Free local lightweight LLM using text-generation
+pipe = pipeline(
+    "text-generation",
+    model="Qwen/Qwen2.5-0.5B-Instruct",
+    max_new_tokens=128,
+    return_full_text=False
 )
- 
-llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    api_key="YOUR_OPENAI_API_KEY"
-)
- 
-prompt = ChatPromptTemplate.from_template("""
-Answer the question using only the given context.
- 
+llm = HuggingFacePipeline(pipeline=pipe)
+
+# 5. Define prompt and LCEL chain
+prompt = PromptTemplate.from_template("""Answer the question using only the given context.
+
 Context:
 {context}
- 
+
 Question:
 {question}
- 
-Answer:
-""")
- 
+
+Answer:""")
+
 parser = StrOutputParser()
 chain = prompt | llm | parser
- 
-question = "What is Artificial Intelligence?"
- 
+
+question = "What is RAG?"
+
+# 6. Retrieve relevant documents
 documents = retriever.invoke(question)
- 
-context = "\n\n".join(
-    [doc.page_content for doc in documents]
-)
- 
+context = "\n\n".join([doc.page_content for doc in documents])
+
 print("\n--- RETRIEVED CONTEXT ---")
 print(context)
- 
+
+# 7. Generate answer
 try:
     response = chain.invoke({
         "context": context,
         "question": question
     })
- 
+
     print("\n--- RAG RESPONSE ---")
-    print(response)
-    except Exception as e:
+    print(response.strip())
+except Exception as e:
     print("\nError:", e)
+  
